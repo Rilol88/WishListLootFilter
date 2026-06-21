@@ -2,18 +2,16 @@
 ## Title: WishListLootFilter
 ## Notes: Wunschliste für Loot - zeigt Notifications und Tooltip-Hinweise wenn ein gewünschtes Item droppt.
 ## Author: Rilol88
-## Version: 0.2.1
+## Version: 0.1.0
 ## SavedVariables: WishListLootFilterDB
 ## SavedVariablesPerCharacter: WishListLootFilterCharDB
 ## X-Curse-Project-ID:
 ## X-Wago-ID:
 
-enUS.lua
-deDE.lua
+Locales\enUS.lua
+Locales\deDE.lua
 
 Database.lua
-BiSPresets.lua
-DungeonLoot.lua
 Core.lua
 Loot.lua
 Tooltip.lua
