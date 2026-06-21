@@ -20,7 +20,7 @@ Inspiriert vom Loot-Wishlist-Konzept von [KeystoneLoot](https://github.com/Wolke
 
 ## Installation
 
-1. Ordner `WishListLootFilter` nach `World of Warcraft/_classic_/Interface/AddOns/` kopieren.
+1. Ordner `WishListLootFilter` nach `World of Warcraft/_anniversary_/Interface/AddOns/` kopieren.
 2. WoW (neu) starten, Addon im Char-Auswahlbildschirm aktivieren.
 
 ## Geplante Erweiterungen
