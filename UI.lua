@@ -18,7 +18,7 @@ local rows = {}
 
 local function CreateMainFrame()
     local f = CreateFrame("Frame", "WLLFMainFrame", UIParent, "BasicFrameTemplateWithInset")
-    f:SetSize(360, 60 + VISIBLE_ROWS * ROW_HEIGHT)
+    f:SetSize(360, 86 + VISIBLE_ROWS * ROW_HEIGHT)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -31,6 +31,39 @@ local function CreateMainFrame()
     f.title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     f.title:SetPoint("TOP", f, "TOP", 0, -6)
     f.title:SetText(L["WISHLIST"])
+
+    -- Phasen-Auswahl (TBC Classic Anniversary: Phase 1-5)
+    local phaseLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    phaseLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -28)
+    phaseLabel:SetText(L["PHASE_LABEL"] or "Phase:")
+    f.phaseLabel = phaseLabel
+
+    local phaseDropdown = CreateFrame("Frame", "WLLFPhaseDropdown", f, "UIDropDownMenuTemplate")
+    phaseDropdown:SetPoint("LEFT", phaseLabel, "RIGHT", -8, -2)
+    UIDropDownMenu_SetWidth(phaseDropdown, 170)
+
+    local function OnPhaseSelected(self, phaseNum)
+        WLLF.DB:SetSetting("selectedPhase", phaseNum)
+        UIDropDownMenu_SetSelectedValue(phaseDropdown, phaseNum)
+        UI:Refresh()
+    end
+
+    UIDropDownMenu_Initialize(phaseDropdown, function(self, level)
+        for _, p in ipairs(WLLF.Phases) do
+            local info = UIDropDownMenu_CreateInfo()
+            local label = p.short .. " - " .. p.name
+            if p.num == WLLF.CURRENT_PHASE then
+                label = label .. " " .. (L["PHASE_CURRENT_TAG"] or "(aktuell)")
+            end
+            info.text = label
+            info.value = p.num
+            info.func = function(self) OnPhaseSelected(self, self.value) end
+            info.checked = (WLLF.DB:GetSetting("selectedPhase") == p.num)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+
+    f.phaseDropdown = phaseDropdown
 
     -- Drop-Zone Hinweistext
     f.hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -75,7 +108,7 @@ local function CreateMainFrame()
 
     -- Scroll-Liste
     local scrollFrame = CreateFrame("ScrollFrame", "WLLFScrollFrame", f, "FauxScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -30)
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -56)
     scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 56)
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
         FauxScrollFrame_OnVerticalScroll(self, offset, ROW_HEIGHT, function() UI:Refresh() end)
@@ -160,6 +193,9 @@ function UI:Toggle()
         main:Hide()
     else
         main:Show()
+        if main.phaseDropdown then
+            UIDropDownMenu_SetSelectedValue(main.phaseDropdown, WLLF.DB:GetSetting("selectedPhase"))
+        end
         UI:Refresh()
     end
 end
@@ -199,7 +235,7 @@ local function CreateAlertFrame()
     f.closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
     f.closeBtn:SetScript("OnClick", function() UI:HideAlert() end)
 
-    f:SetScript("OnMouseUp", function() UI.UI and UI.UI:Toggle() or UI:Toggle() end)
+    f:SetScript("OnMouseUp", function() UI:Toggle() end)
     f:EnableMouse(true)
 
     return f

@@ -18,6 +18,7 @@ local defaults = {
         notifySound = true,
         minimapAngle = 215,
         minimapHide = false,
+        selectedPhase = (WLLF.CURRENT_PHASE or 2),
     },
 }
 
