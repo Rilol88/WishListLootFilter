@@ -1,5 +1,6 @@
 -- UI.lua
--- Hauptfenster der Wishlist, Drop-Notification-Popup und Export/Import-Dialoge.
+-- Hauptfenster: BiS-Browser (Dungeons/Raids/Meine Liste), Drop-Notification-Popup,
+-- Export/Import-Dialoge.
 
 WLLF = WLLF or {}
 local WLLF = WLLF
@@ -16,9 +17,49 @@ local VISIBLE_ROWS = 8
 local main
 local rows = {}
 
+-- Baut die aktuell anzuzeigenden Zeilen abhängig von Tab/Spec/Phase/Slot.
+local function BuildRows()
+    local tab = WLLF.DB:GetSetting("activeTab") or "dungeon"
+
+    if tab == "mine" then
+        local items = WLLF.DB:GetItems()
+        local ids = {}
+        for itemID in pairs(items) do table.insert(ids, itemID) end
+        table.sort(ids)
+        local result = {}
+        for _, itemID in ipairs(ids) do
+            table.insert(result, { mode = "mine", itemID = itemID })
+        end
+        return result
+    end
+
+    local specKey = WLLF.DB:GetSetting("selectedSpec")
+    local phase = WLLF.DB:GetSetting("selectedPhase")
+    local slotFilter = WLLF.DB:GetSetting("selectedSlot") or "ALL"
+    if not specKey then return {} end
+
+    local preset = WLLF:GetBiSPreset(specKey, phase)
+    if not preset then return {} end
+
+    local result = {}
+    for _, slotKey in ipairs(WLLF.SlotOrder) do
+        if slotFilter == "ALL" or slotFilter == slotKey then
+            local itemsForSlot = preset.slots[slotKey]
+            if itemsForSlot then
+                for _, it in ipairs(itemsForSlot) do
+                    if WLLF:CategorizeSource(it.note) == tab then
+                        table.insert(result, { mode = "bis", slotKey = slotKey, item = it })
+                    end
+                end
+            end
+        end
+    end
+    return result
+end
+
 local function CreateMainFrame()
     local f = CreateFrame("Frame", "WLLFMainFrame", UIParent, "BasicFrameTemplateWithInset")
-    f:SetSize(360, 86 + VISIBLE_ROWS * ROW_HEIGHT)
+    f:SetSize(420, 150 + VISIBLE_ROWS * ROW_HEIGHT)
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:EnableMouse(true)
@@ -32,7 +73,7 @@ local function CreateMainFrame()
     f.title:SetPoint("TOP", f, "TOP", 0, -6)
     f.title:SetText(L["WISHLIST"])
 
-    -- Phasen-Auswahl (TBC Classic Anniversary: Phase 1-5)
+    -- ===== Zeile 1: Phase =====
     local phaseLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     phaseLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -28)
     phaseLabel:SetText(L["PHASE_LABEL"] or "Phase:")
@@ -62,36 +103,92 @@ local function CreateMainFrame()
             UIDropDownMenu_AddButton(info, level)
         end
     end)
-
     f.phaseDropdown = phaseDropdown
 
-    -- Drop-Zone Hinweistext
+    -- ===== Zeile 2: Klasse/Spec + Slot =====
+    local specDropdown = CreateFrame("Frame", "WLLFSpecDropdown", f, "UIDropDownMenuTemplate")
+    specDropdown:SetPoint("TOPLEFT", phaseDropdown, "BOTTOMLEFT", -10, -4)
+    UIDropDownMenu_SetWidth(specDropdown, 190)
+
+    local function OnSpecSelected(self, specKey)
+        WLLF.DB:SetSetting("selectedSpec", specKey)
+        WLLF.DB:SetSetting("selectedSlot", "ALL")
+        UIDropDownMenu_SetSelectedValue(specDropdown, specKey)
+        UI:Refresh()
+    end
+
+    UIDropDownMenu_Initialize(specDropdown, function(self, level)
+        for _, entry in ipairs(WLLF:GetSpecList()) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = entry.label
+            info.value = entry.key
+            info.func = function(self) OnSpecSelected(self, self.value) end
+            info.checked = (WLLF.DB:GetSetting("selectedSpec") == entry.key)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    f.specDropdown = specDropdown
+
+    local slotDropdown = CreateFrame("Frame", "WLLFSlotDropdown", f, "UIDropDownMenuTemplate")
+    slotDropdown:SetPoint("LEFT", specDropdown, "RIGHT", -6, 0)
+    UIDropDownMenu_SetWidth(slotDropdown, 130)
+
+    local function OnSlotSelected(self, slotKey)
+        WLLF.DB:SetSetting("selectedSlot", slotKey)
+        UIDropDownMenu_SetSelectedValue(slotDropdown, slotKey)
+        UI:Refresh()
+    end
+
+    UIDropDownMenu_Initialize(slotDropdown, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "Alle Slots"
+        info.value = "ALL"
+        info.func = function(self) OnSlotSelected(self, self.value) end
+        info.checked = (WLLF.DB:GetSetting("selectedSlot") == "ALL")
+        UIDropDownMenu_AddButton(info, level)
+
+        for _, slotKey in ipairs(WLLF.SlotOrder) do
+            local info2 = UIDropDownMenu_CreateInfo()
+            info2.text = WLLF.SlotLabels[slotKey] or slotKey
+            info2.value = slotKey
+            info2.func = function(self) OnSlotSelected(self, self.value) end
+            info2.checked = (WLLF.DB:GetSetting("selectedSlot") == slotKey)
+            UIDropDownMenu_AddButton(info2, level)
+        end
+    end)
+    f.slotDropdown = slotDropdown
+
+    -- ===== Zeile 3: Tabs =====
+    local tabDefs = {
+        { key = "dungeon", label = "Dungeons" },
+        { key = "raid", label = "Raids" },
+        { key = "mine", label = "Meine Liste" },
+    }
+    f.tabButtons = {}
+    local prevTab
+    for _, def in ipairs(tabDefs) do
+        local btn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        btn:SetSize(110, 22)
+        if prevTab then
+            btn:SetPoint("LEFT", prevTab, "RIGHT", 4, 0)
+        else
+            btn:SetPoint("TOPLEFT", slotDropdown, "BOTTOMLEFT", 14, -6)
+        end
+        btn:SetText(def.label)
+        btn:SetScript("OnClick", function()
+            WLLF.DB:SetSetting("activeTab", def.key)
+            UI:Refresh()
+        end)
+        f.tabButtons[def.key] = btn
+        prevTab = btn
+    end
+
+    -- Hinweistext (nur sichtbar, wenn Liste leer ist)
     f.hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     f.hint:SetPoint("BOTTOM", f, "BOTTOM", 0, 38)
     f.hint:SetText(L["DRAG_ITEM_HINT"])
-    f.hint:SetWidth(320)
-
-    -- Drag&Drop-Empfang für Items (Cursor mit Item -> Klick auf Fenster)
-    f:SetScript("OnMouseUp", function(self)
-        local infoType, itemID, itemLink = GetCursorInfo()
-        if infoType == "item" and itemLink then
-            local id = WLLF:GetItemIDFromLink(itemLink)
-            if id then
-                if WLLF.DB:AddItem(id) then
-                    local name = GetItemInfo(id) or ("Item:" .. id)
-                    WLLF:Print(string.format(L["ITEM_ADDED"], name))
-                    UI:Refresh()
-                else
-                    local name = GetItemInfo(id) or ("Item:" .. id)
-                    WLLF:Print(string.format(L["ITEM_ALREADY_ON_LIST"], name))
-                end
-            end
-            ClearCursor()
-        end
-    end)
-    f:SetScript("OnReceiveDrag", function(self)
-        self:GetScript("OnMouseUp")(self)
-    end)
+    f.hint:SetWidth(380)
+    f.hint:Hide()
 
     -- Export/Import-Buttons
     f.exportBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
@@ -108,7 +205,7 @@ local function CreateMainFrame()
 
     -- Scroll-Liste
     local scrollFrame = CreateFrame("ScrollFrame", "WLLFScrollFrame", f, "FauxScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -56)
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -118)
     scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 56)
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
         FauxScrollFrame_OnVerticalScroll(self, offset, ROW_HEIGHT, function() UI:Refresh() end)
@@ -117,7 +214,7 @@ local function CreateMainFrame()
 
     for i = 1, VISIBLE_ROWS do
         local row = CreateFrame("Button", nil, f)
-        row:SetSize(320, ROW_HEIGHT - 4)
+        row:SetSize(378, ROW_HEIGHT - 4)
         if i == 1 then
             row:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", 0, 0)
         else
@@ -129,14 +226,18 @@ local function CreateMainFrame()
         row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
 
         row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.name:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
-        row.name:SetWidth(220)
+        row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, -1)
+        row.name:SetWidth(190)
         row.name:SetJustifyH("LEFT")
 
-        row.removeBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        row.removeBtn:SetSize(70, 20)
-        row.removeBtn:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-        row.removeBtn:SetText(L["REMOVE_ITEM"])
+        row.subText = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        row.subText:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 8, 1)
+        row.subText:SetWidth(190)
+        row.subText:SetJustifyH("LEFT")
+
+        row.actionBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        row.actionBtn:SetSize(80, 20)
+        row.actionBtn:SetPoint("RIGHT", row, "RIGHT", 0, 0)
 
         row:SetScript("OnEnter", function(self)
             if self.itemLink then
@@ -153,30 +254,77 @@ local function CreateMainFrame()
     return f
 end
 
+local function UpdateTabHighlight()
+    if not main or not main.tabButtons then return end
+    local active = WLLF.DB:GetSetting("activeTab") or "dungeon"
+    for key, btn in pairs(main.tabButtons) do
+        if key == active then
+            btn:LockHighlight()
+        else
+            btn:UnlockHighlight()
+        end
+    end
+end
+
 function UI:Refresh()
     if not main then return end
 
-    local items = WLLF.DB:GetItems()
-    local ids = {}
-    for itemID in pairs(items) do table.insert(ids, itemID) end
-    table.sort(ids)
+    UpdateTabHighlight()
 
-    FauxScrollFrame_Update(main.scrollFrame, #ids, VISIBLE_ROWS, ROW_HEIGHT)
+    local dataList = BuildRows()
+
+    FauxScrollFrame_Update(main.scrollFrame, #dataList, VISIBLE_ROWS, ROW_HEIGHT)
     local offset = FauxScrollFrame_GetOffset(main.scrollFrame)
+
+    main.hint:SetShown(#dataList == 0)
 
     for i = 1, VISIBLE_ROWS do
         local row = rows[i]
         local dataIndex = i + offset
-        local itemID = ids[dataIndex]
-        if itemID then
+        local entry = dataList[dataIndex]
+
+        if entry and entry.mode == "mine" then
+            local itemID = entry.itemID
             local name, link, _, _, _, _, _, _, _, icon = GetItemInfo(itemID)
             row.itemLink = link
             row.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
             row.name:SetText(name or ("Item:" .. itemID))
-            row.removeBtn:SetScript("OnClick", function()
+            row.subText:SetText("")
+            row.actionBtn:SetText(L["REMOVE_ITEM"])
+            row.actionBtn:SetScript("OnClick", function()
                 WLLF.DB:RemoveItem(itemID)
                 UI:Refresh()
             end)
+            row:Show()
+        elseif entry and entry.mode == "bis" then
+            local it = entry.item
+            local name, link, _, _, _, _, _, _, _, icon = GetItemInfo(it.id)
+            row.itemLink = link
+            row.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            row.name:SetText((name or it.name) .. (it.rank == "alt" and "  |cff999999(Alt)|r" or ""))
+            local sub = WLLF.SlotLabels[entry.slotKey] or entry.slotKey
+            if it.note and it.note ~= "" then
+                sub = sub .. " - " .. it.note
+            end
+            row.subText:SetText(sub)
+
+            local itemID = it.id
+            if WLLF.DB:HasItem(itemID) then
+                row.actionBtn:SetText(L["REMOVE_ITEM"] or "Entfernen")
+                row.actionBtn:SetScript("OnClick", function()
+                    WLLF.DB:RemoveItem(itemID)
+                    UI:Refresh()
+                end)
+            else
+                row.actionBtn:SetText("+ Wunsch")
+                row.actionBtn:SetScript("OnClick", function()
+                    if WLLF.DB:AddItem(itemID, it.note, entry.slotKey) then
+                        local n = GetItemInfo(itemID) or it.name
+                        WLLF:Print(string.format(L["ITEM_ADDED"], n))
+                    end
+                    UI:Refresh()
+                end)
+            end
             row:Show()
         else
             row.itemLink = nil
@@ -192,9 +340,18 @@ function UI:Toggle()
     if main:IsShown() then
         main:Hide()
     else
+        if not WLLF.DB:GetSetting("selectedSpec") then
+            WLLF.DB:SetSetting("selectedSpec", WLLF:GetDefaultSpecKey())
+        end
         main:Show()
         if main.phaseDropdown then
             UIDropDownMenu_SetSelectedValue(main.phaseDropdown, WLLF.DB:GetSetting("selectedPhase"))
+        end
+        if main.specDropdown then
+            UIDropDownMenu_SetSelectedValue(main.specDropdown, WLLF.DB:GetSetting("selectedSpec"))
+        end
+        if main.slotDropdown then
+            UIDropDownMenu_SetSelectedValue(main.slotDropdown, WLLF.DB:GetSetting("selectedSlot"))
         end
         UI:Refresh()
     end

@@ -19,6 +19,9 @@ local defaults = {
         minimapAngle = 215,
         minimapHide = false,
         selectedPhase = (WLLF.CURRENT_PHASE or 2),
+        selectedSpec = nil,    -- wird beim ersten Start anhand der Spielerklasse gesetzt
+        selectedSlot = "ALL",
+        activeTab = "dungeon", -- "dungeon" | "raid" | "mine"
     },
 }
 

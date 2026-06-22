@@ -70,7 +70,91 @@ function WLLF:GetAvailablePhases(specKey)
     return list
 end
 
--- ===================== HUNTER =====================
+-- ===================== Browser-UI Hilfsfunktionen =====================
+
+-- Schlüsselwörter zur Quellen-Kategorisierung anhand des "note"-Felds eines Items.
+-- Die meisten "best"-Items ohne note stammen aus dem Raid der jeweiligen Phase,
+-- daher ist "raid" der Standard-Fallback.
+local OTHER_SOURCE_KEYWORDS = {
+    "Schmiedekunst", "Lederverarbeitung", "Schneiderei", "Juwelenschleifen",
+    "Ingenieurskunst", "Badge of Justice", "Ehrenpunkte", "Exalted", "Revered",
+    "Arena", "PvP", "Vendor", "Ruf",
+}
+
+local DUNGEON_SOURCE_KEYWORDS = {
+    "Slave Pens", "Underbog", "Steamvault", "Mana Tombs", "Auchenai",
+    "Sethekk", "Shadow Labyrinth", "Mechanar", "Botanica", "Arcatraz",
+    "Hillsbrad", "Black Morass", "Hellfire Ramparts", "Blood Furnace",
+    "Shattered Halls", "Magister",
+}
+
+function WLLF:CategorizeSource(note)
+    if not note or note == "" then return "raid" end
+    for _, kw in ipairs(OTHER_SOURCE_KEYWORDS) do
+        if note:find(kw, 1, true) then return "other" end
+    end
+    for _, kw in ipairs(DUNGEON_SOURCE_KEYWORDS) do
+        if note:find(kw, 1, true) then return "dungeon" end
+    end
+    return "raid"
+end
+
+-- Geordnete Liste aller bekannten Ausrüstungs-Slots + deutsche Anzeigenamen.
+WLLF.SlotOrder = {
+    "head", "neck", "shoulder", "back", "chest", "wrist", "hands", "waist",
+    "legs", "feet", "ring1", "ring2", "trinket",
+    "mainhand", "offhand", "twohand", "wand", "ranged", "relic",
+}
+
+WLLF.SlotLabels = {
+    head = "Kopf", neck = "Hals", shoulder = "Schulter", back = "Rücken",
+    chest = "Brust", wrist = "Handgelenk", hands = "Hände", waist = "Taille",
+    legs = "Beine", feet = "Füße", ring1 = "Ring 1", ring2 = "Ring 2",
+    trinket = "Schmuckstück", mainhand = "Haupthand", offhand = "Nebenhand",
+    twohand = "Zweihand", wand = "Zauberstab", ranged = "Fernkampf",
+    relic = "Relikt",
+}
+
+local CLASS_DISPLAY = {
+    WARRIOR = "Warrior", PALADIN = "Paladin", HUNTER = "Hunter", ROGUE = "Rogue",
+    PRIEST = "Priest", SHAMAN = "Shaman", MAGE = "Mage", WARLOCK = "Warlock",
+    DRUID = "Druid",
+}
+
+local function FormatSpecLabel(specKey)
+    local classToken, specPart = specKey:match("^(%a+)-(%a+)$")
+    if not classToken then return specKey end
+    local className = CLASS_DISPLAY[classToken] or classToken
+    -- Leerzeichen vor jedem Großbuchstaben einfügen ("BeastMastery" -> "Beast Mastery")
+    local specName = specPart:gsub("(%u)", " %1"):gsub("^%s+", "")
+    return className .. " (" .. specName .. ")"
+end
+
+-- Liefert eine sortierte Liste { {key=specKey, label=..., classToken=...}, ... }
+-- aller Specs, für die BiS-Daten vorliegen.
+function WLLF:GetSpecList()
+    local list = {}
+    for specKey in pairs(WLLF.BiSPresets) do
+        if type(specKey) == "string" and specKey:find("-", 1, true) then
+            local classToken = specKey:match("^(%a+)-")
+            table.insert(list, { key = specKey, label = FormatSpecLabel(specKey), classToken = classToken })
+        end
+    end
+    table.sort(list, function(a, b) return a.label < b.label end)
+    return list
+end
+
+-- Ermittelt anhand der Spielerklasse eine sinnvolle Default-Spec.
+function WLLF:GetDefaultSpecKey()
+    local classToken = select(2, UnitClass("player"))
+    local list = WLLF:GetSpecList()
+    for _, entry in ipairs(list) do
+        if entry.classToken == classToken then
+            return entry.key
+        end
+    end
+    return list[1] and list[1].key or nil
+end
 
 WLLF.BiSPresets["HUNTER-BeastMastery"] = {
     [1] = {
